@@ -189,6 +189,16 @@ g.loc text{
 }
 g.loc:hover text,g.loc:focus-visible text{opacity:1}
 g.loc:focus-visible .star{stroke:var(--gold);stroke-width:2}
+/* always-visible site labels (Steve's ask) — quiet, small, haloed for legibility;
+   dense pockets get one "CITY (n)" tag instead of stacked names */
+text.plabel{
+  font-family:var(--font-h);font-size:17.5px;letter-spacing:1.6px;
+  fill:var(--map-label);opacity:.85;
+  paint-order:stroke;stroke:var(--map-label-stroke);stroke-width:5px;stroke-linejoin:round;
+  pointer-events:none;
+}
+text.plabel.cluster{opacity:.95}
+@media(max-width:640px){text.plabel{font-size:23px;letter-spacing:1.1px}}
 .map-legend{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;color:var(--dim);font-size:14px;margin-top:14px}
 .map-legend .key{display:inline-flex;align-items:center;gap:8px}
 .map-legend .k-star{color:var(--magenta-hi);font-size:17px;filter:drop-shadow(0 0 5px rgba(240,29,79,.8))}
@@ -867,6 +877,35 @@ MARKERS.forEach(m=>{ m.x=m.tx; m.y=m.ty; });
   }
 })();
 
+/* ---- always-on map labels ----
+   Singles get their name; the four tight clusters get one "CITY (n)" tag
+   (individual names still appear on hover / in the popout).
+   a = text-anchor, dx/dy = offset from the (relaxed) star position. */
+const LABEL_SPECS={
+  "Cash Magic Springhill":              {t:"SPRINGHILL",      a:"middle", dx:0,   dy:30},
+  "Cash Magic Vivian":                  {t:"VIVIAN",          a:"start",  dx:16,  dy:6},
+  "Cash Magic Shreveport":              {t:"SHREVEPORT",      a:"start",  dx:16,  dy:6},
+  "Cash Magic Lake Charles":            {t:"LAKE CHARLES",    a:"start",  dx:16,  dy:6},
+  "Cash Magic Winner's Choice":         {t:"WINNER'S CHOICE", a:"middle", dx:0,   dy:32},
+  "Cash Magic Eunice":                  {t:"EUNICE",          a:"middle", dx:0,   dy:-17},
+  "Cash Magic Breaux Bridge":           {t:"BREAUX BRIDGE",   a:"middle", dx:0,   dy:-17},
+  "Cash Magic Westbank":                {t:"WESTBANK",        a:"middle", dx:0,   dy:-17},
+  "Cash Magic Raceland":                {t:"RACELAND",        a:"start",  dx:15,  dy:6},
+  "Cash Magic Thibodaux":               {t:"THIBODAUX",       a:"middle", dx:0,   dy:-17},
+  "Cash Magic Larose":                  {t:"LAROSE",          a:"start",  dx:15,  dy:6},
+  "Cash Magic Galliano":                {t:"GALLIANO",        a:"middle", dx:0,   dy:27},
+  "Cash Magic Silver Fox":              {t:"SILVER FOX",      a:"end",    dx:-15, dy:2},
+  "Lucky Magnolia Truck Plaza & Casino":{t:"LUCKY MAGNOLIA",  a:"end",    dx:-15, dy:12},
+  "Cash Magic Bayou Vista":             {t:"BAYOU VISTA",     a:"end",    dx:-15, dy:6},
+  "Hollywood Truck Plaza & Casino":     {t:"HOLLYWOOD",       a:"start",  dx:15,  dy:6}
+};
+const CLUSTER_LABELS=[
+  {t:"VINTON (2)",    a:"end",    dx:-16, dy:6,  members:["Cash Magic Texas Pelican","Cash Magic Vinton"]},
+  {t:"BROUSSARD (2)", a:"middle", dx:0,   dy:38, members:["Cash Magic Broussard North","Cash Magic Broussard South"]},
+  {t:"AMITE (3)",     a:"start",  dx:18,  dy:6,  members:["Amite Truck Plaza & Casino","Cash Magic St. Helena","Forest Gold Truck Plaza & Casino"]},
+  {t:"HOUMA (3)",     a:"end",    dx:-20, dy:14, members:["Cash Magic Houma","Cash Magic Prospect Station","Cash Magic Royal Flush"]}
+];
+
 /* ================================================================
    MAP ENGINE — renders an instance into a container; shared popout
    ================================================================ */
@@ -899,13 +938,38 @@ function buildMap(containerId){
     halo.setAttribute("class","halo"); halo.setAttribute("r","10");
     const star=document.createElementNS(SVGNS,"path");
     star.setAttribute("class","star"); star.setAttribute("d",STAR_D);
-    const label=document.createElementNS(SVGNS,"text");
-    label.setAttribute("y","-16"); label.setAttribute("text-anchor","middle");
-    label.textContent=l.name.replace("Truck Plaza & Casino","").replace("Cash Magic ","");
-    g.append(hit,halo,star,label);
+    g.append(hit,halo,star);
+    if(!LABEL_SPECS[l.name]){ // hover name only where there's no permanent label
+      const label=document.createElementNS(SVGNS,"text");
+      label.setAttribute("y","-16"); label.setAttribute("text-anchor","middle");
+      label.textContent=l.name.replace("Truck Plaza & Casino","").replace("Cash Magic ","");
+      g.append(label);
+    }
     g.addEventListener("click",e=>{e.stopPropagation();openPopout(wrap,g,m);});
     g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openPopout(wrap,g,m);}});
     svg.appendChild(g);
+  });
+
+  // always-visible labels
+  const posByName={};
+  MARKERS.forEach(m=>{ posByName[LOCATIONS[m.i].name]=m; });
+  function addLabel(txt,x,y,anchor,extra){
+    const t=document.createElementNS(SVGNS,"text");
+    t.setAttribute("class","plabel"+(extra?" "+extra:""));
+    t.setAttribute("x",x.toFixed(1)); t.setAttribute("y",y.toFixed(1));
+    t.setAttribute("text-anchor",anchor);
+    t.textContent=txt;
+    svg.appendChild(t);
+  }
+  Object.keys(LABEL_SPECS).forEach(name=>{
+    const s=LABEL_SPECS[name], m=posByName[name];
+    if(m) addLabel(s.t, m.x+s.dx, m.y+s.dy, s.a);
+  });
+  CLUSTER_LABELS.forEach(c=>{
+    const pts=c.members.map(n=>posByName[n]).filter(Boolean);
+    if(!pts.length) return;
+    const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+    addLabel(c.t, cx+c.dx, cy+c.dy, c.a, "cluster");
   });
 
   const pop=document.createElement("div");
