@@ -195,10 +195,15 @@ text.plabel{
   font-family:var(--font-h);font-size:17.5px;letter-spacing:1.6px;
   fill:var(--map-label);opacity:.85;
   paint-order:stroke;stroke:var(--map-label-stroke);stroke-width:5px;stroke-linejoin:round;
-  pointer-events:none;
+  cursor:pointer;
+  transition:font-size .16s ease,opacity .16s ease;
 }
-text.plabel.cluster{opacity:.95}
-@media(max-width:640px){text.plabel{font-size:23px;letter-spacing:1.1px}}
+text.plabel.cluster{opacity:.95;cursor:default}
+/* hovered/focused site: label comes forward — bigger, full-strength, heavier halo
+   (JS also re-stacks it above neighboring labels) */
+text.plabel.hot{opacity:1;font-size:23px;stroke-width:7.5px;fill:var(--text)}
+g.loc.lit .star{transform:scale(1.5)} /* label-hover lights its star too */
+@media(max-width:640px){text.plabel{font-size:23px;letter-spacing:1.1px}text.plabel.hot{font-size:28px}}
 .map-legend{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;color:var(--dim);font-size:14px;margin-top:14px}
 .map-legend .key{display:inline-flex;align-items:center;gap:8px}
 .map-legend .k-star{color:var(--magenta-hi);font-size:17px;filter:drop-shadow(0 0 5px rgba(240,29,79,.8))}
@@ -960,16 +965,45 @@ function buildMap(containerId){
     t.setAttribute("text-anchor",anchor);
     t.textContent=txt;
     svg.appendChild(t);
+    return t;
   }
+  const labelByName={};   // location name -> its label (cluster members share one)
+  const soloLabelName={}; // label element -> owning single location name
   Object.keys(LABEL_SPECS).forEach(name=>{
     const s=LABEL_SPECS[name], m=posByName[name];
-    if(m) addLabel(s.t, m.x+s.dx, m.y+s.dy, s.a);
+    if(!m) return;
+    const t=addLabel(s.t, m.x+s.dx, m.y+s.dy, s.a);
+    labelByName[name]=t; soloLabelName[s.t]=name;
   });
   CLUSTER_LABELS.forEach(c=>{
     const pts=c.members.map(n=>posByName[n]).filter(Boolean);
     if(!pts.length) return;
     const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
-    addLabel(c.t, cx+c.dx, cy+c.dy, c.a, "cluster");
+    const t=addLabel(c.t, cx+c.dx, cy+c.dy, c.a, "cluster");
+    c.members.forEach(n=>{ labelByName[n]=t; });
+  });
+
+  // hover/focus focus-forward: star <-> label emphasis, label re-stacked on top
+  svg.querySelectorAll("g.loc").forEach(g=>{
+    const name=LOCATIONS[g.dataset.idx].name;
+    const lab=labelByName[name];
+    if(!lab) return;
+    const promote=()=>{ lab.classList.add("hot"); svg.appendChild(lab); };
+    const demote=()=>lab.classList.remove("hot");
+    g.addEventListener("mouseenter",promote);
+    g.addEventListener("mouseleave",demote);
+    g.addEventListener("focus",promote);
+    g.addEventListener("blur",demote);
+    if(!lab.classList.contains("cluster") && !lab._wired){
+      lab._wired=true;
+      lab.addEventListener("mouseenter",()=>{ promote(); g.classList.add("lit"); });
+      lab.addEventListener("mouseleave",()=>{ demote(); g.classList.remove("lit"); });
+      lab.addEventListener("click",e=>{ e.stopPropagation(); g.dispatchEvent(new MouseEvent("click")); });
+    } else if(lab.classList.contains("cluster") && !lab._wired){
+      lab._wired=true;
+      lab.addEventListener("mouseenter",promote);
+      lab.addEventListener("mouseleave",demote);
+    }
   });
 
   const pop=document.createElement("div");
