@@ -988,7 +988,13 @@ function buildMap(containerId){
     const name=LOCATIONS[g.dataset.idx].name;
     const lab=labelByName[name];
     if(!lab) return;
-    const promote=()=>{ lab.classList.add("hot"); svg.appendChild(lab); };
+    // bring the label forward, then the marker group itself LAST — so the
+    // star's own hover tooltip (cluster members' real site name) paints above
+    // every permanent label, never hidden behind e.g. HOLLYWOOD
+    const promote=()=>{
+      lab.classList.add("hot");
+      if(svg.lastElementChild!==g){ svg.appendChild(lab); svg.appendChild(g); }
+    };
     const demote=()=>lab.classList.remove("hot");
     g.addEventListener("mouseenter",promote);
     g.addEventListener("mouseleave",demote);
